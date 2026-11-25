@@ -1,0 +1,19 @@
+# Prometheus configuration for the lab.
+# Start Prometheus with remote write enabled so that k6 can push its own metrics:
+#   prometheus --config.file=monitoring/prometheus.yml --web.enable-remote-write-receiver
+# Then run k6 with:
+#   K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write
+#   k6 run -o experimental-prometheus-rw --tag testid=<name> k6/load.js
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  # The system under test exposes its own metrics: queue depth, DB pool, money drift...
+  - job_name: bank-api
+    static_configs:
+      - targets: ["localhost:3001"]
+
+  # Optional: CPU / RAM of the machine (windows_exporter on Windows, node_exporter on Linux)
+  - job_name: host
+    static_configs:
+      - targets: ["localhost:9182"]

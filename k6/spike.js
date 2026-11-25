@@ -1,0 +1,73 @@
+// SPIKE: "quincena" (payday). Salaries land on the 15th and at month end: within
+// seconds everybody checks their balance and pays rent, bills, family transfers.
+// Question answered: does the API absorb a sudden burst, and how fast does it recover?
+// Two traffic streams + a probe:
+//   - browsing: usual mix, x6 for one minute
+//   - payroll payments: 0 -> 300 payments/s -> 0 (above the 200/s settlement capacity,
+//     so the settlement queue fills up, then must drain back to 0)
+//   - probe: reads /metrics every second (queue depth, DB pool, memory)
+//   k6 run k6/spike.js            (~4 min)
+//   k6 run -e SHORT=1 k6/spike.js (~2 min)
+import { login, resetBank, checkReconciliation, SHORT } from './lib/api.js';
+import { bankingUser, makePayment } from './lib/traffic.js';
+import { monitorScenario, probe } from './lib/monitor.js';
+
+export { probe };
+
+const t = (s) => `${SHORT ? Math.ceil(s / 2) : s}s`;
+const total = (SHORT ? 1 : 2) * (30 + 10 + 60 + 10 + 120) + 10;
+
+export const options = {
+  scenarios: {
+    browsing: {
+      executor: 'ramping-arrival-rate',
+      startRate: 50, timeUnit: '1s', preAllocatedVUs: 50, maxVUs: 1000,
+      stages: [
+        { target: 50, duration: t(30) },   // normal day
+        { target: 300, duration: t(10) },  // salaries land
+        { target: 300, duration: t(60) },
+        { target: 50, duration: t(10) },
+        { target: 50, duration: t(120) },  // recovery window
+      ],
+      exec: 'browse',
+    },
+    payroll_payments: {
+      executor: 'ramping-arrival-rate',
+      startRate: 5, timeUnit: '1s', preAllocatedVUs: 50, maxVUs: 1000,
+      stages: [
+        { target: 5, duration: t(30) },
+        { target: 300, duration: t(10) },
+        { target: 300, duration: t(60) },
+        { target: 5, duration: t(10) },
+        { target: 5, duration: t(120) },
+      ],
+      exec: 'pay',
+    },
+    probe: monitorScenario(`${total}s`),
+  },
+  thresholds: {
+    'http_req_duration{scenario:browsing}': ['p(95)<800'],
+    'http_req_duration{scenario:payroll_payments}': ['p(95)<1000'],
+    http_req_failed: ['rate<0.02'],
+    settlement_drain_time: ['max<120000'], // the queue must be empty again within 2 min
+    settlement_queue_depth: ['value==0'],  // ...and empty at the end of the test
+    reconciliation_errors: ['count==0'],
+  },
+};
+
+export function setup() {
+  resetBank();
+  return { token: login() };
+}
+
+export function browse({ token }) {
+  bankingUser(token);
+}
+
+export function pay({ token }) {
+  makePayment(token);
+}
+
+export function teardown() {
+  checkReconciliation();
+}

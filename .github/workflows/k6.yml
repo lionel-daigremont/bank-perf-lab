@@ -1,0 +1,53 @@
+name: k6 performance checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  k6:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - uses: grafana/setup-k6-action@v1
+
+      - name: Start the mock bank API
+        run: |
+          node mock-bank/server.js > server.log 2>&1 &
+          for i in $(seq 1 20); do curl -sf http://localhost:3001/health && break; sleep 0.5; done
+
+      - name: Smoke test
+        run: k6 run k6/smoke.js
+
+      - name: Concurrency and idempotency
+        run: k6 run k6/concurrency.js
+
+      - name: Load test (1 min, 100 req/s)
+        run: k6 run -e SHORT=1 --summary-export=load-summary.json k6/load.js
+
+      # A test suite is only useful if it fails when the code is wrong:
+      # restart the API with a race condition and expect the concurrency test to fail.
+      - name: The tests must catch an injected race condition
+        run: |
+          pkill -f mock-bank/server.js
+          node mock-bank/server.js --bug=race > buggy-server.log 2>&1 &
+          sleep 1
+          if k6 run k6/concurrency.js; then
+            echo "::error::concurrency.js passed against a buggy API"
+            exit 1
+          fi
+          echo "As expected, the injected race condition was detected."
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: k6-results
+          path: |
+            load-summary.json
+            *.log

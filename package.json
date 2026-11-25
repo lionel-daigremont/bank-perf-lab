@@ -1,0 +1,22 @@
+{
+  "name": "bank-perf-lab",
+  "version": "1.0.0",
+  "description": "Performance and concurrency testing of a mock banking API with k6 (JMeter version coming)",
+  "private": true,
+  "scripts": {
+    "start": "node mock-bank/server.js",
+    "start:race": "node mock-bank/server.js --bug=race",
+    "start:leak": "node mock-bank/server.js --bug=leak",
+    "smoke": "k6 run k6/smoke.js",
+    "concurrency": "k6 run k6/concurrency.js",
+    "load": "k6 run -e SHORT=1 k6/load.js",
+    "stress": "k6 run -e SHORT=1 k6/stress.js",
+    "spike": "k6 run -e SHORT=1 k6/spike.js",
+    "soak": "k6 run -e SHORT=1 k6/soak.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "author": "Lionel Daigremont",
+  "license": "MIT"
+}

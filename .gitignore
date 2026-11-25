@@ -1,0 +1,9 @@
+node_modules/
+*.csv
+*.jtl
+*.log
+results/
+report/
+rapport*.html
+summary*.json
+load-summary.json
