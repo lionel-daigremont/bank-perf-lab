@@ -14,8 +14,11 @@ import { monitorScenario, probe, DRIFT_THRESHOLDS } from './lib/monitor.js';
 
 export { probe };
 
-const t = (s) => `${SHORT ? Math.ceil(s / 2) : s}s`;
-const total = (SHORT ? 1 : 2) * (30 + 10 + 60 + 10 + 120) + 10;
+const sec = (s) => (SHORT ? Math.ceil(s / 2) : s);
+const t = (s) => `${sec(s)}s`;
+// The probe runs as long as the traffic, plus 30 s to watch the settlement queue
+// drain back to 0 after the last request (the "tail" of the test).
+const total = [30, 10, 60, 10, 120].reduce((sum, s) => sum + sec(s), 0) + 30;
 
 export const options = {
   scenarios: {

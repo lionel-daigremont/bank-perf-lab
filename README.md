@@ -7,7 +7,7 @@ the system is busy: double debits after a retry, lost updates, overdrafts, a set
 that never drains. This lab tests both sides: **how fast** the API is, and **whether the money is
 still right** when it is under pressure.
 
-> A JMeter version of the main load test is planned (see [Roadmap](#roadmap)).
+> The main load test also exists in JMeter: see [JMeter version](#jmeter-version).
 
 ## What is tested
 
@@ -64,19 +64,44 @@ thresholds and dashboards are split per endpoint.
 
 ## Results
 
-Measured on a laptop, mock API with default settings (pool of 10 connections, ~20 ms per query,
-so about 500 queries/s). Numbers are illustrative; the point is what each test reveals.
+Measured on the author's Windows laptop, mock API with default settings (pool of 10 connections,
+~20 ms per query, so about 500 queries/s), `SHORT=1` profiles. Numbers depend on the machine;
+the point is what each test reveals.
 
 | Test | Result |
 |---|---|
-| Load, 100 req/s | ✅ p95 ≈ 29 ms on every endpoint, 0 errors, reconciliation OK |
-| Stress | 🔎 Capacity ≈ **500 req/s**. At 600 req/s latency degrades first (p95 1.5 s, requests queue for a DB connection) before errors appear: the test aborts at that step |
-| Spike, pool of 10 | ❌ p95 2 s, 3 % of `503` (pool exhausted). Payday is not absorbed |
-| Spike, `POOL_SIZE=20` | ✅ p95 29 ms, 0 errors; settlement backlog peaks at 4,600 payments and drains in 60 s |
-| Soak (short version) | ✅ memory flat (55–110 MB), backlog back to 0 after each burst |
-| Soak, `--bug=leak` | ❌ memory climbs burst after burst: 53 → 312 MB, threshold crossed |
+| Load, 100 req/s for 1 min | ✅ p95 ≈ 31 ms on every endpoint, 0 errors out of 6,064 requests, reconciliation OK. Only 2 to 5 VUs needed (Little's law: 100 req/s × 0.023 s ≈ 2.3 concurrent users) |
+| Stress | 🔎 Aborted on the **600 req/s** step: p95 reached 1.5 s with **0 errors**. Capacity is between 400 and 600 req/s (~500 in theory). Latency degrades before errors appear, so the latency threshold stops the test before the outage. Saturation also shows on the load generator side: up to ~1,030 VUs and 948 dropped iterations |
+| Spike, pool of 10 | ❌ `503` errors (up to ~15 % of requests at the peak), ~1,100 requests waiting for a DB connection, p95 capped at ~2 s (= the pool timeout). Payday is not absorbed |
+| Spike, `POOL_SIZE=20` | ✅ no `503`, p95 back to ~30 ms; settlement backlog peaks at ~4,500 payments and drains in about a minute |
+| Soak, short version (6 min, 3 bursts of 3,000 payments) | ✅ 0 errors out of 38,193 requests. Each burst fills the settlement queue to ~1,500 and **drains in 16 to 17 s, every time** (no degradation from one burst to the next). Background p95 ≈ 39 ms between bursts (p90), ~175 ms during bursts while requests wait for a DB connection. Memory (RSS) rises from ~46 to ~110–130 MB, then stays at that level. The same happens with idempotency keys expiring after 60 s instead of 10 min: it is the Node.js runtime reserving memory under load and keeping it, not data piling up |
+| Soak, `--bug=leak` | ❌ Same queue, latency, error rate and money drift as the normal run: the leak is invisible everywhere **except memory**, which climbs at every burst and never comes down, to ~320 MB (2.5× the reference run). The 256 MB threshold fails the test |
 | Concurrency | ✅ 5 keys → 5 payments; 50 accepted / 50 refused; balance exactly 0.00 |
 | Concurrency, `--bug=race` | ❌ 150 payments for 5 keys, 100 overdraft payments accepted, **23,200 PEN created out of nothing** |
+
+### Payday spike: 10 vs 20 database connections
+
+![Grafana dashboard: payday spike with 10 then 20 DB connections](docs/dashboard-spike.png)
+
+Left peak: 10 connections. Right peak: 20 connections. How to read it:
+
+- **DB connection pool**: with 10 connections, ~1,100 requests wait for a connection (orange); with 20, none.
+- **Requests by HTTP status**: `503` (red) only during the first spike.
+- **p95**: capped at ~2 s during the first spike (requests time out after `POOL_TIMEOUT_MS`), ~30 ms during the second.
+- **Settlement queue**: *lower* with 10 connections (~2,900 vs ~4,500), because part of the payments was
+  rejected before reaching the queue. A smaller backlog is not always good news: read it together with the error rate.
+- **Settlement throughput** stays capped at 200/s in both runs: the bottleneck was the database, not the settlement engine.
+- **Money drift** stays at 0.00: under overload the API rejects requests cleanly, it never loses money.
+- **Virtual users**: ~1,000 VUs for the same arrival rate with 10 connections. Open-model signature of saturation:
+  k6 keeps the planned rate, so slow responses mean more concurrent users.
+
+### Memory: a leak is judged against a reference run
+
+RSS is the memory *reserved* by the process, not the memory in use. In a garbage-collected runtime
+(Node.js, the JVM) it grows to a plateau under load and stays there, so a rising RSS alone does not
+prove a leak. The soak test therefore compares runs of the same duration: the normal run levels off
+around 110–130 MB, the `--bug=leak` run keeps climbing with every burst to ~320 MB. A 6-minute soak
+can show a leak; it cannot prove the absence of one, which takes a run long enough to see the plateau.
 
 ## Quick start
 
@@ -113,19 +138,33 @@ k6 settings: `BASE_URL` (default `http://localhost:3001`), `SHORT=1`, `RATE` (lo
 
 **Prometheus + Grafana** (the setup used in real projects):
 
-1. `prometheus --config.file=monitoring/prometheus.yml --web.enable-remote-write-receiver`
-   Prometheus scrapes the API's own `/metrics` and receives k6 metrics by remote write.
-2. Run a test with a `testid` tag to compare runs later:
+1. Start Prometheus with the lab configuration. It scrapes the API's own `/metrics` and receives
+   k6 metrics by remote write. Native histograms let Grafana compute real percentiles over time:
+   ```bash
+   prometheus --config.file=monitoring/prometheus.yml --web.enable-remote-write-receiver --enable-feature=native-histograms
+   ```
+2. Run a test with a `testid` tag, so that runs can be compared later:
    ```bash
    export K6_PROMETHEUS_RW_SERVER_URL=http://localhost:9090/api/v1/write
+   export K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM=true
    k6 run -o experimental-prometheus-rw --tag testid=spike-pool10 -e SHORT=1 k6/spike.js
    ```
-3. In Grafana, add Prometheus as a data source. Useful queries:
-   - `bank_settlement_queue_depth`: backlog filling and draining (the "sawtooth")
-   - `rate(bank_payments_settled_total[30s])`: settlement throughput
-   - `bank_db_pool_waiting`: requests waiting for a connection (saturation)
-   - `bank_money_drift_cents`: must stay flat at 0
-   - `k6_http_req_duration_p95{testid="spike-pool10"}`: client-side latency
+   PowerShell: `$env:K6_PROMETHEUS_RW_SERVER_URL="http://localhost:9090/api/v1/write"` and
+   `$env:K6_PROMETHEUS_RW_TREND_AS_NATIVE_HISTOGRAM="true"`.
+
+   Why native histograms: with the default export (`K6_PROMETHEUS_RW_TREND_STATS`), k6 sends a
+   p95 already computed over the whole run, so the curve never goes back down after a spike.
+   With histograms, `histogram_quantile(0.95, ...)` gives the p95 of the last few seconds.
+3. In Grafana, add Prometheus as a data source (`http://localhost:9090`), then import
+   `monitoring/grafana-dashboard.json` (*Dashboards > New > Import*). Three rows:
+   - **Business** (from the API): settlement queue depth, payments created vs settled per second,
+     money drift (must stay at 0.00)
+   - **Saturation** (from the API): requests per second by HTTP status (503 in red), DB pool in use
+     and waiting, server memory
+   - **Client view** (from k6, filtered by `testid`): p95 per endpoint (sliding window), error rate,
+     VUs and request rate
+
+   The first two rows come from the system itself, so they work the same with k6 or JMeter.
 
 Grafana uses port 3000, the API uses 3001: no conflict.
 
@@ -136,6 +175,35 @@ k6 exits with a non-zero code when a threshold is crossed, so a performance regr
 build. A last step restarts the API with `--bug=race` and **expects** the concurrency test to fail,
 which shows that the suite actually detects the defect it was written for.
 
+## JMeter version
+
+`jmeter/load.jmx` is the JMeter equivalent of `k6/load.js` (same traffic mix, same rate, same
+reconciliation). It uses only core JMeter 5.6 elements, no plugins.
+
+```bash
+# GUI, to read and edit the plan
+jmeter -t jmeter/load.jmx
+# CLI, for a real run + HTML report (never load-test from the GUI)
+jmeter -n -t jmeter/load.jmx -Jrate=100 -Jduration=1 -l results/load.jtl -e -o results/report
+```
+
+Properties: `-Jhost` (localhost), `-Jport` (3001), `-Jrate` (requests/s, 100), `-Jduration` (minutes, 1).
+
+| Concept | k6 (`k6/load.js`) | JMeter (`jmeter/load.jmx`) |
+|---|---|---|
+| Test lifecycle | `setup()` / `default` / `teardown()` | setUp Thread Group / Thread Group / tearDown Thread Group |
+| Open model, fixed arrival rate | `constant-arrival-rate` executor | **Open Model Thread Group**: `rate(100/sec) random_arrivals(1 min)` |
+| Token correlation | `login()` returns the token to every VU | **JSON Extractor** + JSR223 `props.put()` to share it across thread groups |
+| Test data | random account ids | **CSV Data Set Config** (`jmeter/data/accounts.csv`) |
+| Traffic mix | `Math.random()` in `bankingUser()` | **Switch Controller** with a `__groovy` weighted choice |
+| Idempotency key | `newIdempotencyKey()` | `${__UUID()}` in a Header Manager |
+| Checks | `check()` | Response Assertion, JSON Assertion |
+| Pass / fail | thresholds, exit code | assertions + error rate in the HTML report (no built-in thresholds) |
+| Reconciliation | `checkReconciliation()` | While Controller polling `/admin/reconciliation`, then JSON Assertions |
+
+The server-side Grafana panels (queue, pool, money drift) work unchanged with JMeter, because they
+read the API's own `/metrics`.
+
 ## Project structure
 
 ```
@@ -144,7 +212,9 @@ k6/lib/api.js           API client, endpoint tags, reconciliation check
 k6/lib/traffic.js       traffic mix and shared thresholds
 k6/lib/monitor.js       probe scenario reading /metrics (queue, pool, memory, money drift)
 k6/*.js                 one script per test type
-monitoring/             Prometheus configuration
+monitoring/             Prometheus configuration, Grafana dashboard
+jmeter/load.jmx         JMeter version of k6/load.js (generated by jmeter/build_jmx.py)
+jmeter/data/            CSV test data for JMeter
 .github/workflows/      CI pipeline
 ```
 
@@ -162,8 +232,9 @@ monitoring/             Prometheus configuration
 
 ## Roadmap
 
-- [ ] JMeter version of `load.js` (Thread Groups, CSV Data Set, JSON Extractor, Backend Listener)
-- [ ] Grafana dashboard exported as JSON
+- [x] JMeter version of `load.js`
+- [ ] JMeter results in Grafana (Backend Listener to InfluxDB)
+- [x] Grafana dashboard exported as JSON
 - [ ] Token renewal for multi-hour soak tests
 - [ ] Test data from CSV (`SharedArray`) instead of random accounts
 

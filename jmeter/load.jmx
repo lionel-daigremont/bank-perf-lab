@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+<hashTree>
+<TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="bank-perf-lab: load test (JMeter version of k6/load.js)"><stringProp name="TestPlan.comments">Run: jmeter -n -t jmeter/load.jmx -Jrate=100 -Jduration=1 -l results/load.jtl -e -o results/report</stringProp><boolProp name="TestPlan.functional_mode">false</boolProp><boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp><boolProp name="TestPlan.serialize_threadgroups">true</boolProp><elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="TestPlan.user_define_classpath"></stringProp></TestPlan>
+<hashTree>
+<ConfigTestElement guiclass="HttpDefaultsGui" testclass="ConfigTestElement" testname="HTTP Request Defaults"><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.domain">${__P(host,localhost)}</stringProp><stringProp name="HTTPSampler.port">${__P(port,3001)}</stringProp><stringProp name="HTTPSampler.protocol">http</stringProp><stringProp name="HTTPSampler.connect_timeout">5000</stringProp><stringProp name="HTTPSampler.response_timeout">10000</stringProp></ConfigTestElement>
+<hashTree/>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="JSON content type"><collectionProp name="HeaderManager.headers"><elementProp name="" elementType="Header"><stringProp name="Header.name">Content-Type</stringProp><stringProp name="Header.value">application/json</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<SetupThreadGroup guiclass="SetupThreadGroupGui" testclass="SetupThreadGroup" testname="setUp: reset the bank and get a token"><stringProp name="ThreadGroup.on_sample_error">continue</stringProp><elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController"><stringProp name="LoopController.loops">1</stringProp><boolProp name="LoopController.continue_forever">false</boolProp></elementProp><stringProp name="ThreadGroup.num_threads">1</stringProp><stringProp name="ThreadGroup.ramp_time">1</stringProp><boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp></SetupThreadGroup>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /admin/reset"><boolProp name="HTTPSampler.postBodyRaw">false</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.path">/admin/reset</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200"><collectionProp name="Asserion.test_strings"><stringProp name="0">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+</hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /auth/token"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"client_id":"k6-client","client_secret":"s3cr3t"}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/auth/token</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200"><collectionProp name="Asserion.test_strings"><stringProp name="0">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract access_token (correlation)"><stringProp name="JSONPostProcessor.referenceNames">TOKEN</stringProp><stringProp name="JSONPostProcessor.jsonPathExprs">$.access_token</stringProp><stringProp name="JSONPostProcessor.match_numbers">1</stringProp><stringProp name="JSONPostProcessor.defaultValues">NOT_FOUND</stringProp></JSONPostProcessor>
+<hashTree/>
+<JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Share the token with all thread groups"><stringProp name="scriptLanguage">groovy</stringProp><stringProp name="parameters"></stringProp><stringProp name="filename"></stringProp><stringProp name="cacheKey">true</stringProp><stringProp name="script">// vars are per thread; props are global to the whole test
+props.put('TOKEN', vars.get('TOKEN'))</stringProp></JSR223PostProcessor>
+<hashTree/>
+</hashTree>
+</hashTree>
+<OpenModelThreadGroup guiclass="OpenModelThreadGroupGui" testclass="OpenModelThreadGroup" testname="Busy hour: open model, constant arrival rate"><elementProp name="ThreadGroup.main_controller" elementType="OpenModelThreadGroupController"/><stringProp name="ThreadGroup.on_sample_error">continue</stringProp><stringProp name="OpenModelThreadGroup.schedule">rate(${__P(rate,100)}/sec) random_arrivals(${__P(duration,1)} min) rate(${__P(rate,100)}/sec)</stringProp><stringProp name="OpenModelThreadGroup.random_seed"></stringProp></OpenModelThreadGroup>
+<hashTree>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Bearer token"><collectionProp name="HeaderManager.headers"><elementProp name="" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${__P(TOKEN)}</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="Accounts (CSV test data)"><stringProp name="filename">${__P(data,data/accounts.csv)}</stringProp><stringProp name="fileEncoding">UTF-8</stringProp><stringProp name="variableNames"></stringProp><boolProp name="ignoreFirstLine">false</boolProp><stringProp name="delimiter">,</stringProp><boolProp name="quotedData">false</boolProp><boolProp name="recycle">true</boolProp><boolProp name="stopThread">false</boolProp><stringProp name="shareMode">shareMode.all</stringProp></CSVDataSet>
+<hashTree/>
+<SwitchController guiclass="SwitchControllerGui" testclass="SwitchController" testname="Traffic mix: 60 % balance, 25 % history, 15 % payment"><stringProp name="SwitchController.value">${__groovy(def r = Math.random(); r &lt; 0.60 ? 'balance' : (r &lt; 0.85 ? 'history' : 'payment'))}</stringProp></SwitchController>
+<hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="balance"></GenericController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /accounts/:id"><boolProp name="HTTPSampler.postBodyRaw">false</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.path">/accounts/${FROM}</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200"><collectionProp name="Asserion.test_strings"><stringProp name="0">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="history"></GenericController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /accounts/:id/transactions"><boolProp name="HTTPSampler.postBodyRaw">false</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.path">/accounts/${FROM}/transactions?limit=20</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 200"><collectionProp name="Asserion.test_strings"><stringProp name="0">200</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+<GenericController guiclass="LogicControllerGui" testclass="GenericController" testname="payment"></GenericController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="POST /payments"><boolProp name="HTTPSampler.postBodyRaw">true</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><stringProp name="Argument.value">{"from":"${FROM}","to":"${TO}","amount":"${__Random(1,49)}.${__Random(10,99)}","currency":"PEN"}</stringProp><stringProp name="Argument.metadata">=</stringProp></elementProp></collectionProp></elementProp><stringProp name="HTTPSampler.path">/payments</stringProp><stringProp name="HTTPSampler.method">POST</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="Idempotency-Key"><collectionProp name="HeaderManager.headers"><elementProp name="" elementType="Header"><stringProp name="Header.name">Idempotency-Key</stringProp><stringProp name="Header.value">${__UUID()}</stringProp></elementProp></collectionProp></HeaderManager>
+<hashTree/>
+<ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="HTTP 201"><collectionProp name="Asserion.test_strings"><stringProp name="0">201</stringProp></collectionProp><stringProp name="Assertion.custom_message"></stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">false</boolProp><intProp name="Assertion.test_type">8</intProp></ResponseAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="status is PENDING"><stringProp name="JSON_PATH">$.status</stringProp><stringProp name="EXPECTED_VALUE">PENDING</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+</hashTree>
+</hashTree>
+<PostThreadGroup guiclass="PostThreadGroupGui" testclass="PostThreadGroup" testname="tearDown: reconciliation"><stringProp name="ThreadGroup.on_sample_error">continue</stringProp><elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController"><stringProp name="LoopController.loops">1</stringProp><boolProp name="LoopController.continue_forever">false</boolProp></elementProp><stringProp name="ThreadGroup.num_threads">1</stringProp><stringProp name="ThreadGroup.ramp_time">1</stringProp><boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp></PostThreadGroup>
+<hashTree>
+<WhileController guiclass="WhileControllerGui" testclass="WhileController" testname="Wait for the settlement queue to drain"><stringProp name="WhileController.condition">${__jexl3("${PENDING}" != "0")}</stringProp></WhileController>
+<hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /admin/reconciliation (polling)"><boolProp name="HTTPSampler.postBodyRaw">false</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.path">/admin/reconciliation</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<JSONPostProcessor guiclass="JSONPostProcessorGui" testclass="JSONPostProcessor" testname="Extract pendingSettlements"><stringProp name="JSONPostProcessor.referenceNames">PENDING</stringProp><stringProp name="JSONPostProcessor.jsonPathExprs">$.pendingSettlements</stringProp><stringProp name="JSONPostProcessor.match_numbers">1</stringProp><stringProp name="JSONPostProcessor.defaultValues">0</stringProp></JSONPostProcessor>
+<hashTree/>
+<ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Wait 1000 ms"><stringProp name="ConstantTimer.delay">1000</stringProp></ConstantTimer>
+<hashTree/>
+</hashTree>
+</hashTree>
+<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="GET /admin/reconciliation (final check)"><boolProp name="HTTPSampler.postBodyRaw">false</boolProp><elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments"><collectionProp name="Arguments.arguments"/></elementProp><stringProp name="HTTPSampler.path">/admin/reconciliation</stringProp><stringProp name="HTTPSampler.method">GET</stringProp><boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp></HTTPSamplerProxy>
+<hashTree>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="money conserved (drift = 0)"><stringProp name="JSON_PATH">$.driftCents</stringProp><stringProp name="EXPECTED_VALUE">0</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="no negative balance"><stringProp name="JSON_PATH">$.negativeBalances</stringProp><stringProp name="EXPECTED_VALUE">0</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+<JSONPathAssertion guiclass="JSONPathAssertionGui" testclass="JSONPathAssertion" testname="no duplicate payment"><stringProp name="JSON_PATH">$.duplicatePayments</stringProp><stringProp name="EXPECTED_VALUE">0</stringProp><boolProp name="JSONVALIDATION">true</boolProp><boolProp name="EXPECT_NULL">false</boolProp><boolProp name="INVERT">false</boolProp><boolProp name="ISREGEX">false</boolProp></JSONPathAssertion>
+<hashTree/>
+</hashTree>
+</hashTree>
+</hashTree>
+</hashTree>
+</jmeterTestPlan>
