@@ -8,7 +8,7 @@
 import { sleep } from 'k6';
 import { login, resetBank, checkReconciliation, SHORT } from './lib/api.js';
 import { bankingUser, makePayment } from './lib/traffic.js';
-import { monitorScenario, probe } from './lib/monitor.js';
+import { monitorScenario, probe, DRIFT_THRESHOLDS } from './lib/monitor.js';
 
 export { probe };
 
@@ -46,6 +46,7 @@ export const options = {
     settlement_queue_depth: ['value==0'],
     server_memory_mb: [`value<${SHORT ? 256 : 512}`], // a leak makes memory climb burst after burst
     reconciliation_errors: ['count==0'],
+    ...DRIFT_THRESHOLDS, // money conserved at every second of the run, not only at the end
   },
 };
 

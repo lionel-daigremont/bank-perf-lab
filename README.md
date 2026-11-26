@@ -105,7 +105,7 @@ npm run start:leak    # then: k6 run -e SHORT=1 k6/soak.js
 API settings (environment variables): `PORT`, `POOL_SIZE`, `DB_LATENCY_MS`, `POOL_TIMEOUT_MS`,
 `SETTLE_RATE`, `ACCOUNTS`, `TOKEN_TTL_S`. On Windows PowerShell: `$env:POOL_SIZE="20"; npm start`.
 
-k6 settings: `BASE_URL` (default `http://localhost:3001`), `SHORT=1`, `RATE` (load, soak), `HOURS` (soak).
+k6 settings: `BASE_URL` (default `http://localhost:3001`), `SHORT=1`, `RATE` (load, soak), `HOURS` (soak), `MAX_RATE` (stress, top step, default 800).
 
 ## Live dashboards
 
@@ -142,7 +142,7 @@ which shows that the suite actually detects the defect it was written for.
 mock-bank/server.js     system under test (no dependencies)
 k6/lib/api.js           API client, endpoint tags, reconciliation check
 k6/lib/traffic.js       traffic mix and shared thresholds
-k6/lib/monitor.js       probe scenario reading /metrics (queue, pool, memory)
+k6/lib/monitor.js       probe scenario reading /metrics (queue, pool, memory, money drift)
 k6/*.js                 one script per test type
 monitoring/             Prometheus configuration
 .github/workflows/      CI pipeline

@@ -7,3 +7,6 @@ report/
 rapport*.html
 summary*.json
 load-summary.json
+
+# local notes for Claude Code (personal, not part of the project)
+CLAUDE.md

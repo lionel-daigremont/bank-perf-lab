@@ -10,7 +10,7 @@
 //   k6 run -e SHORT=1 k6/spike.js (~2 min)
 import { login, resetBank, checkReconciliation, SHORT } from './lib/api.js';
 import { bankingUser, makePayment } from './lib/traffic.js';
-import { monitorScenario, probe } from './lib/monitor.js';
+import { monitorScenario, probe, DRIFT_THRESHOLDS } from './lib/monitor.js';
 
 export { probe };
 
@@ -52,6 +52,7 @@ export const options = {
     settlement_drain_time: ['max<120000'], // the queue must be empty again within 2 min
     settlement_queue_depth: ['value==0'],  // ...and empty at the end of the test
     reconciliation_errors: ['count==0'],
+    ...DRIFT_THRESHOLDS, // money conserved at every second of the run, not only at the end
   },
 };
 
