@@ -256,6 +256,25 @@ jmeter/data/            CSV test data for JMeter
 - **The system exposes its own metrics**: the load tool only generates traffic; the queue depth
   comes from the API, so the same dashboard works with k6 or JMeter.
 
+## Limitations
+
+This is a lab, not a production benchmark. What it does not do, and what a real project would do instead:
+
+- **Everything runs on one machine**: the API, the load generator (k6 or JMeter), Prometheus and Grafana
+  share the same CPU and memory, so the generator competes with the system it measures. In a real
+  project the injectors run on dedicated machines, and their own CPU and memory are monitored too.
+- **The system under test is a mock**: the "database" is an in-memory map behind a simulated connection
+  pool with a fixed latency. Real bottlenecks (SQL queries, locks, indexes, network hops between services)
+  behave differently; the absolute numbers here are illustrative, the method is what carries over.
+- **Short runs**: the `SHORT=1` profiles last 1 to 6 minutes. They can reveal a leak, but proving the
+  absence of one takes a soak long enough to see memory level off (hours, not minutes).
+- **Single token**: one OAuth token is shared by all virtual users and never renewed. A real test would
+  log in per user and handle token expiry.
+- **No network latency**: client and server talk over `localhost`, so response times do not include
+  the network delays real users would see.
+- **Numbers depend on the laptop**: results come from the author's Windows machine; rerun the tests to
+  get your own baseline before comparing.
+
 ## Roadmap
 
 - [x] JMeter version of `load.js`

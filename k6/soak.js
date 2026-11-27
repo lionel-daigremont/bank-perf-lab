@@ -43,7 +43,11 @@ export const options = {
     'http_req_duration{scenario:background}': ['p(95)<500'],
     http_req_failed: ['rate<0.01'],
     settlement_drain_time: ['max<120000'],
-    settlement_queue_depth: ['value==0'],
+    // No 'settlement_queue_depth: value==0' threshold here: it would only check the probe's
+    // LAST one-second sample, taken while a payment may still be in flight, so it failed or
+    // passed by chance (a flaky threshold). An empty queue is checked reliably instead by the
+    // reconciliation in teardown(), which waits for the queue to drain, and by
+    // settlement_drain_time above. Same trap as cutting a request mid-flight in JMeter.
     server_memory_mb: [`value<${SHORT ? 256 : 512}`], // a leak makes memory climb burst after burst
     reconciliation_errors: ['count==0'],
     ...DRIFT_THRESHOLDS, // money conserved at every second of the run, not only at the end
