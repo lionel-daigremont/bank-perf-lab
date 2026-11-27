@@ -71,6 +71,7 @@ the point is what each test reveals.
 | Test | Result |
 |---|---|
 | Load, 100 req/s for 1 min | ✅ p95 ≈ 31 ms on every endpoint, 0 errors out of 6,064 requests, reconciliation OK. Only 2 to 5 VUs needed (Little's law: 100 req/s × 0.023 s ≈ 2.3 concurrent users) |
+| Load in **JMeter**, 100 req/s for 1 min (`jmeter/load.jmx`) | ✅ 6,000 requests, **0 errors**, mix respected (60.3 % / 24.6 % / 15.1 %), reconciliation OK. p95 ≈ 36–38 ms per endpoint (k6: ≈ 31 ms), p99 91–183 ms. Same story as k6; the small gap comes from how each tool measures and from JMeter creating one Java thread per arrival |
 | Stress | 🔎 Aborted on the **600 req/s** step: p95 reached 1.5 s with **0 errors**. Capacity is between 400 and 600 req/s (~500 in theory). Latency degrades before errors appear, so the latency threshold stops the test before the outage. Saturation also shows on the load generator side: up to ~1,030 VUs and 948 dropped iterations |
 | Spike, pool of 10 | ❌ `503` errors (up to ~15 % of requests at the peak), ~1,100 requests waiting for a DB connection, p95 capped at ~2 s (= the pool timeout). Payday is not absorbed |
 | Spike, `POOL_SIZE=20` | ✅ no `503`, p95 back to ~30 ms; settlement backlog peaks at ~4,500 payments and drains in about a minute |
@@ -180,12 +181,37 @@ which shows that the suite actually detects the defect it was written for.
 `jmeter/load.jmx` is the JMeter equivalent of `k6/load.js` (same traffic mix, same rate, same
 reconciliation). It uses only core JMeter 5.6 elements, no plugins.
 
-```bash
-# GUI, to read and edit the plan
+Run from the project root (relative paths in the commands are resolved from the current folder;
+the CSV path inside the plan is resolved from the `jmeter/` folder).
+
+```powershell
+# GUI: to read, edit and debug the plan (add a View Results Tree listener to see each request)
 jmeter -t jmeter/load.jmx
-# CLI, for a real run + HTML report (never load-test from the GUI)
-jmeter -n -t jmeter/load.jmx -Jrate=100 -Jduration=1 -l results/load.jtl -e -o results/report
+
+# CLI: for a real run (never load-test from the GUI)
+# One report per run, timestamped, so that runs can be compared later (like k6's testid tag)
+New-Item -ItemType Directory -Force results | Out-Null   # JMeter does not create the parent folder
+$run = Get-Date -Format "yyyyMMdd-HHmm"
+jmeter -n -t jmeter/load.jmx "-Jrate=100" "-Jduration=1" -l "results/load-$run.jtl" -e -o "results/load-$run"
 ```
+
+| Option | Meaning |
+|---|---|
+| `-n` | non-GUI (CLI) mode |
+| `-t` | the test plan |
+| `-J<name>=<value>` | sets a property, read in the plan with `${__P(name,default)}` |
+| `-l` | raw results file (JTL, one CSV line per request). **Appended to if it already exists**: hence one file per run |
+| `-e -o` | generates the HTML report at the end. The folder **must be empty or not exist** |
+| `-f` | deletes the JTL and the report folder before starting (use it to overwrite a fixed name instead of timestamping) |
+| `-g <jtl> -o <folder>` | regenerates a report from an existing JTL, without running the test again |
+
+Practical notes:
+
+- PowerShell: quote `-J` arguments that contain a dot (`"-Jduration=0.2"`), otherwise PowerShell may split them.
+- JMeter takes a few seconds after `... end of run` to build the HTML report (minutes for a long soak).
+- The schedule ends with `pause(5 s)`: no new arrivals, so requests still in flight can finish. Without it,
+  JMeter cuts the last request when the duration expires and counts it as a `Socket closed` error.
+- `results/` is ignored by git.
 
 Properties: `-Jhost` (localhost), `-Jport` (3001), `-Jrate` (requests/s, 100), `-Jduration` (minutes, 1).
 
